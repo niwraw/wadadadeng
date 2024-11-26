@@ -42,7 +42,8 @@ if "cleaned_data" not in st.session_state:
     st.session_state.cleaned_data = None
 if "uploaded_file" not in st.session_state:
     st.session_state.uploaded_file = None
-
+if "selected_columns" not in st.session_state:
+    st.session_state.selected_columns = {"x": None, "y": None}
 
 @st.cache_resource
 def generate_pygwalker_html(df):
@@ -108,7 +109,23 @@ def Visualization():
     uploaded_file = st.file_uploader("Choose a file to visualize")
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        pygwalker_html = generate_pygwalker_html(df)
+        st.session_state.data = df
+
+        st.sidebar.subheader("Select Columns for Visualization")
+        x_axis = st.sidebar.selectbox("Select X-axis", options=df.columns)
+        y_axis = st.sidebar.selectbox("Select Y-axis", options=df.columns)
+
+        st.session_state.selected_columns["x"] = x_axis
+        st.session_state.selected_columns["y"] = y_axis
+
+        st.write(
+            f"Visualizing: X-axis = `{x_axis}`, Y-axis = `{y_axis}`"
+        )
+
+        selected_columns = [x_axis, y_axis]
+        subset_df = df[selected_columns].copy()
+        
+        pygwalker_html = pyg.walk(subset_df).to_html()
 
         st.components.v1.html(
             f"""
@@ -121,7 +138,12 @@ def Visualization():
         )
 
         if st.button("Generate AI Explanation"):
-            explanation = generate_explanation("Explain the key insights from this dataset.")
+            explanation_prompt = (
+                f"Explain the key insights from the dataset using the following columns: "
+                f"X-axis - {x_axis}, "
+                f"Y-axis - {y_axis}, "
+            )
+            explanation = generate_explanation(explanation_prompt)
             st.subheader("AI Explanation")
             st.write(explanation)
 
