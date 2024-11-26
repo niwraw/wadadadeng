@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import pygwalker as pyg
+import matplotlib.pyplot as plt
 import os
 from groq import Groq
 
@@ -40,15 +40,8 @@ if "data" not in st.session_state:
     st.session_state.data = None
 if "cleaned_data" not in st.session_state:
     st.session_state.cleaned_data = None
-if "uploaded_file" not in st.session_state:
-    st.session_state.uploaded_file = None
-if "selected_columns" not in st.session_state:
-    st.session_state.selected_columns = {"x": None, "y": None}
-
-@st.cache_resource
-def generate_pygwalker_html(df):
-    pygwalker = pyg.walk(df)
-    return pygwalker.to_html()
+if "visualization_settings" not in st.session_state:
+    st.session_state.visualization_settings = {"x": None, "y": None, "measure": None, "graph": None}
 
 
 def generate_explanation(prompt):
@@ -71,9 +64,9 @@ def DataCleaning():
     st.title("Data Cleaning")
     st.write("Clean your data here.")
 
-    st.session_state.uploaded_file = st.file_uploader("Choose a file to clean")
-    if st.session_state.uploaded_file is not None:
-        st.session_state.data = pd.read_csv(st.session_state.uploaded_file)
+    uploaded_file = st.file_uploader("Choose a file to clean")
+    if uploaded_file is not None:
+        st.session_state.data = pd.read_csv(uploaded_file)
         st.dataframe(st.session_state.data)
 
         with st.expander("Summary Statistics"):
@@ -103,48 +96,89 @@ def DataCleaning():
 
 
 def Visualization():
-    st.title("Data Visualization")
-    st.write("Visualize your data here.")
+    st.title("Data Visualization with AI Interpretation")
+    st.write("Visualize your data and get AI insights here.")
 
     uploaded_file = st.file_uploader("Choose a file to visualize")
     if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file)
-        st.session_state.data = df
+        st.session_state.data = pd.read_csv(uploaded_file)
+        df = st.session_state.data
 
-        st.sidebar.subheader("Select Columns for Visualization")
+        st.sidebar.subheader("Visualization Options")
         x_axis = st.sidebar.selectbox("Select X-axis", options=df.columns)
         y_axis = st.sidebar.selectbox("Select Y-axis", options=df.columns)
-
-        st.session_state.selected_columns["x"] = x_axis
-        st.session_state.selected_columns["y"] = y_axis
-
-        st.write(
-            f"Visualizing: X-axis = `{x_axis}`, Y-axis = `{y_axis}`"
+        measure = st.sidebar.selectbox(
+            "Measure Values",
+            options=["Count", "Sum", "Average", "Min", "Max"]
+        )
+        graph_type = st.sidebar.selectbox(
+            "Select Graph Type",
+            options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram"]
         )
 
-        selected_columns = [x_axis, y_axis]
-        subset_df = df[selected_columns].copy()
-        
-        pygwalker_html = pyg.walk(subset_df).to_html()
+        st.session_state.visualization_settings.update({
+            "x": x_axis,
+            "y": y_axis,
+            "measure": measure,
+            "graph": graph_type,
+        })
 
-        st.components.v1.html(
-            f"""
-            <div style="width: 100%; height: 100%; overflow: auto;">
-                {pygwalker_html}
-            </div>
-            """,
-            height=800,
-            scrolling=True,
-        )
+        if st.button("Generate Visualization & Interpretation"):
+            fig, ax = plt.subplots(figsize=(10, 6))
 
-        if st.button("Generate AI Explanation"):
+            # Data grouping and plotting logic
+            if measure == "Count":
+                df_grouped = df.groupby(x_axis).size()
+            else:
+                if y_axis in df.select_dtypes(include=["number"]).columns:
+                    if measure == "Sum":
+                        df_grouped = df.groupby(x_axis)[y_axis].sum()
+                    elif measure == "Average":
+                        df_grouped = df.groupby(x_axis)[y_axis].mean()
+                    elif measure == "Min":
+                        df_grouped = df.groupby(x_axis)[y_axis].min()
+                    elif measure == "Max":
+                        df_grouped = df.groupby(x_axis)[y_axis].max()
+                else:
+                    st.error("Measure values are only applicable to numeric columns.")
+                    return
+
+            if graph_type == "Bar Chart":
+                df_grouped.plot(kind="bar", ax=ax)
+                ax.set_title("Bar Chart")
+            elif graph_type == "Line Chart":
+                df_grouped.plot(kind="line", ax=ax)
+                ax.set_title("Line Chart")
+            elif graph_type == "Scatter Plot":
+                if y_axis in df.select_dtypes(include=["number"]).columns:
+                    df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
+                else:
+                    st.error("Scatter plots require a numeric column for Y-axis.")
+                    return
+            elif graph_type == "Histogram":
+                if y_axis in df.select_dtypes(include=["number"]).columns:
+                    df[y_axis].plot(kind="hist", bins=20, ax=ax)
+                else:
+                    st.error("Histograms require a numeric column for the selected measure.")
+                    return
+
+            ax.set_xlabel(x_axis)
+            ax.set_ylabel(y_axis)
+            st.pyplot(fig)
+
+            settings = st.session_state.visualization_settings
+            x_data_sample = df[x_axis].head(10).tolist()
+            y_data_sample = df[y_axis].head(10).tolist()
+
             explanation_prompt = (
-                f"Explain the key insights from the dataset using the following columns: "
-                f"X-axis - {x_axis}, "
-                f"Y-axis - {y_axis}, "
+                f"The visualization is generated based on the following data:\n"
+                f"- X-axis (`{settings['x']}`) values: {x_data_sample}\n"
+                f"- Y-axis (`{settings['y']}`) values: {y_data_sample}\n"
+                f"The measure used is `{settings['measure']}` and the graph type is `{settings['graph']}`. "
+                f"Analyze the data and explain the key findings or insights this visualization provides."
             )
             explanation = generate_explanation(explanation_prompt)
-            st.subheader("AI Explanation")
+            st.subheader("AI Interpretation")
             st.write(explanation)
 
 
