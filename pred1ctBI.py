@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import plotly.express as px
+import tempfile
 from groq import Groq
+from fpdf import FPDF
+from io import BytesIO
 
 os.environ["GROQ_API_KEY"] = "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"
 
@@ -28,7 +32,7 @@ st.markdown(
     }
     iframe {
         width: 100% !important;
-        height: calc(100vh - 200px) !important; /* Adjusts dynamically to viewport */
+        height: calc(100vh - 200px) !important;
         border: none;
     }
     </style>
@@ -42,22 +46,59 @@ if "cleaned_data" not in st.session_state:
     st.session_state.cleaned_data = None
 if "visualization_settings" not in st.session_state:
     st.session_state.visualization_settings = {"x": None, "y": None, "measure": None, "graph": None}
+if "interpretation" not in st.session_state:
+    st.session_state.interpretation = None
+if "fig" not in st.session_state:
+    st.session_state.fig = None
 
 
 def generate_explanation(prompt):
     try:
         chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            messages=[{"role": "user", "content": prompt}],
             model="llama3-8b-8192",
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"An error occurred while generating the explanation: {str(e)}"
+
+
+def save_as_pdf(interpretation, fig):
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Add title
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="AI Interpretation and Visualization", ln=True, align="C")
+
+    # Add interpretation text
+    pdf.set_font("Arial", size=10)
+    pdf.multi_cell(0, 5, interpretation)
+
+    # Save the plot as an image to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+        fig.savefig(tmpfile.name, format="png")
+        tmpfile.flush()
+
+        # Add the image from the temporary file to the PDF
+        pdf.image(tmpfile.name, x=10, y=pdf.get_y() + 10, w=180)
+
+    # Save the PDF to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
+        pdf.output(tmpfile.name)
+        tmpfile.flush()
+
+        # Read the PDF back into a BytesIO object
+        with open(tmpfile.name, "rb") as f:
+            pdf_buffer = BytesIO(f.read())
+
+    # Download button to allow the user to download the PDF
+    st.download_button(
+        label="📥 Download PDF",
+        data=pdf_buffer,
+        file_name="interpretation_and_visualization.pdf",
+        mime="application/pdf",
+    )
 
 
 def DataCleaning():
@@ -107,13 +148,9 @@ def Visualization():
         st.sidebar.subheader("Visualization Options")
         x_axis = st.sidebar.selectbox("Select X-axis", options=df.columns)
         y_axis = st.sidebar.selectbox("Select Y-axis", options=df.columns)
-        measure = st.sidebar.selectbox(
-            "Measure Values",
-            options=["Count", "Sum", "Average", "Min", "Max"]
-        )
+        measure = st.sidebar.selectbox("Measure Values", options=["Count", "Sum", "Average", "Min", "Max"])
         graph_type = st.sidebar.selectbox(
-            "Select Graph Type",
-            options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram"]
+            "Select Graph Type", options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram"]
         )
 
         st.session_state.visualization_settings.update({
@@ -150,36 +187,30 @@ def Visualization():
                 df_grouped.plot(kind="line", ax=ax)
                 ax.set_title("Line Chart")
             elif graph_type == "Scatter Plot":
-                if y_axis in df.select_dtypes(include=["number"]).columns:
-                    df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
-                else:
-                    st.error("Scatter plots require a numeric column for Y-axis.")
-                    return
+                df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
+                ax.set_title("Scatter Plot")
             elif graph_type == "Histogram":
-                if y_axis in df.select_dtypes(include=["number"]).columns:
-                    df[y_axis].plot(kind="hist", bins=20, ax=ax)
-                else:
-                    st.error("Histograms require a numeric column for the selected measure.")
-                    return
+                df[y_axis].plot(kind="hist", bins=20, ax=ax)
+                ax.set_title("Histogram")
 
             ax.set_xlabel(x_axis)
             ax.set_ylabel(y_axis)
             st.pyplot(fig)
 
-            settings = st.session_state.visualization_settings
-            x_data_sample = df[x_axis].head(10).tolist()
-            y_data_sample = df[y_axis].head(10).tolist()
+            st.session_state.fig = fig
 
             explanation_prompt = (
                 f"The visualization is generated based on the following data:\n"
-                f"- X-axis (`{settings['x']}`) values: {x_data_sample}\n"
-                f"- Y-axis (`{settings['y']}`) values: {y_data_sample}\n"
-                f"The measure used is `{settings['measure']}` and the graph type is `{settings['graph']}`. "
-                f"Analyze the data and explain the key findings or insights this visualization provides."
+                f"- X-axis (`{x_axis}`) values: {df[x_axis].head(10).tolist()}\n"
+                f"- Y-axis (`{y_axis}`) values: {df[y_axis].head(10).tolist()}\n"
+                f"The measure used is `{measure}` and the graph type is `{graph_type}`."
             )
             explanation = generate_explanation(explanation_prompt)
             st.subheader("AI Interpretation")
+            st.session_state.interpretation = explanation
             st.write(explanation)
+
+            save_as_pdf(explanation, fig)
 
 
 def main():
