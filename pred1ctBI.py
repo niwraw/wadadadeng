@@ -2,11 +2,15 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-import plotly.express as px
 import tempfile
+import seaborn as sns
+import plotly.express as px
 from groq import Groq
 from fpdf import FPDF
+from docx import Document
+from docx.shared import Inches
 from io import BytesIO
+
 
 os.environ["GROQ_API_KEY"] = "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"
 
@@ -63,43 +67,37 @@ def generate_explanation(prompt):
         return f"An error occurred while generating the explanation: {str(e)}"
 
 
-def save_as_pdf(interpretation, fig):
-    pdf = FPDF()
-    pdf.add_page()
-
-    # Add title
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="AI Interpretation and Visualization", ln=True, align="C")
+def save_as_docx(interpretation, fig):
+    doc = Document()
+    doc.add_heading("AI Interpretation and Visualization", level=1)
 
     # Add interpretation text
-    pdf.set_font("Arial", size=10)
-    pdf.multi_cell(0, 5, interpretation)
+    doc.add_paragraph(interpretation)
 
     # Save the plot as an image to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
         fig.savefig(tmpfile.name, format="png")
         tmpfile.flush()
 
-        # Add the image from the temporary file to the PDF
-        pdf.image(tmpfile.name, x=10, y=pdf.get_y() + 10, w=180)
+        # Add the image from the temporary file to the docx
+        doc.add_picture(tmpfile.name, width=Inches(6))
 
-    # Save the PDF to a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmpfile:
-        pdf.output(tmpfile.name)
+    # Save the docx to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmpfile:
+        doc.save(tmpfile.name)
         tmpfile.flush()
 
-        # Read the PDF back into a BytesIO object
+        # Read the docx back into a BytesIO object
         with open(tmpfile.name, "rb") as f:
-            pdf_buffer = BytesIO(f.read())
+            docx_buffer = BytesIO(f.read())
 
-    # Download button to allow the user to download the PDF
+    # Download button to allow the user to download the docx
     st.download_button(
-        label="📥 Download PDF",
-        data=pdf_buffer,
-        file_name="interpretation_and_visualization.pdf",
-        mime="application/pdf",
+        label="📥 Download DOCX",
+        data=docx_buffer,
+        file_name="interpretation_and_visualization.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
-
 
 def DataCleaning():
     st.title("Data Cleaning")
@@ -150,7 +148,7 @@ def Visualization():
         y_axis = st.sidebar.selectbox("Select Y-axis", options=df.columns)
         measure = st.sidebar.selectbox("Measure Values", options=["Count", "Sum", "Average", "Min", "Max"])
         graph_type = st.sidebar.selectbox(
-            "Select Graph Type", options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram"]
+            "Select Graph Type", options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Pie Chart", "Box Plot", "Heatmap","Parallel Coordinates", "Area Chart"]
         )
 
         st.session_state.visualization_settings.update({
@@ -161,7 +159,9 @@ def Visualization():
         })
 
         if st.button("Generate Visualization & Interpretation"):
-            fig, ax = plt.subplots(figsize=(10, 6))
+            fig, ax = plt.subplots(figsize=(10, 10))
+            fig.tight_layout()
+            fig.subplots_adjust(left=0.1, right=1, top=0.9, bottom=0.1)
 
             # Data grouping and plotting logic
             if measure == "Count":
@@ -192,7 +192,21 @@ def Visualization():
             elif graph_type == "Histogram":
                 df[y_axis].plot(kind="hist", bins=20, ax=ax)
                 ax.set_title("Histogram")
-
+            elif graph_type == "Pie Chart":
+                df_grouped.plot(kind="pie", ax=ax)
+                ax.set_title("Pie Chart")
+            elif graph_type == "Box Plot": 
+                df.boxplot(column=[y_axis], by=x_axis, ax=ax)
+                ax.set_title("Box Plot")
+            elif graph_type == "Heatmap":
+                sns.heatmap(df.corr(), annot=True, ax=ax)
+                ax.set_title("Heatmap")
+            elif graph_type == "Area Chart":
+                df_grouped.plot(kind="area", ax=ax)
+                ax.set_title("Area Chart")
+            elif graph_type == "Parallel Coordinates":
+                pd.plotting.parallel_coordinates(df, x_axis, ax=ax)
+                ax.set_title("Parallel Coordinates")
             ax.set_xlabel(x_axis)
             ax.set_ylabel(y_axis)
             st.pyplot(fig)
@@ -210,7 +224,7 @@ def Visualization():
             st.session_state.interpretation = explanation
             st.write(explanation)
 
-            save_as_pdf(explanation, fig)
+            save_as_docx(explanation, fig)
 
 
 def main():
