@@ -169,6 +169,14 @@ def Visualization():
         })
 
         if st.button("Generate Visualization & Interpretation"):
+            if (x_axis not in df.columns) or ("Unnamed" in x_axis):
+                st.error(f"The selected X-axis column '{x_axis}' is invalid or does not exist in the data.")
+                return
+
+            if (y_axis not in df.columns) or ("Unnamed" in y_axis):
+                st.error(f"The selected Y-axis column '{y_axis}' is invalid or does not exist in the data.")
+                return
+            
             if measure != "Count":
                 if y_axis not in df.select_dtypes(include=["number"]).columns:
                     st.error("Selected Y-axis must be numeric for the chosen measure.")
