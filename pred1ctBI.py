@@ -73,7 +73,6 @@ def generate_explanation(prompt):
         )
 
         response = chat_session.send_message(prompt)
-
         return response.text
     except Exception as e:
         return f"An error occurred while generating the explanation: {str(e)}"
@@ -170,14 +169,19 @@ def Visualization():
         })
 
         if st.button("Generate Visualization & Interpretation"):
+            if measure != "Count":
+                if y_axis not in df.select_dtypes(include=["number"]).columns:
+                    st.error("Selected Y-axis must be numeric for the chosen measure.")
+                    return
+
             fig, ax = plt.subplots(figsize=(10, 10))
             fig.tight_layout()
             fig.subplots_adjust(left=0.1, right=1, top=0.9, bottom=0.1)
 
-            if measure == "Count":
-                df_grouped = df.groupby(x_axis).size()
-            else:
-                if y_axis in df.select_dtypes(include=["number"]).columns:
+            try:
+                if measure == "Count":
+                    df_grouped = df.groupby(x_axis).size()
+                else:
                     if measure == "Sum":
                         df_grouped = df.groupby(x_axis)[y_axis].sum()
                     elif measure == "Average":
@@ -186,43 +190,92 @@ def Visualization():
                         df_grouped = df.groupby(x_axis)[y_axis].min()
                     elif measure == "Max":
                         df_grouped = df.groupby(x_axis)[y_axis].max()
-                else:
-                    st.error("Measure values are only applicable to numeric columns.")
-                    return
+            except Exception as e:
+                st.error(f"An error occurred while grouping data: {str(e)}")
+                return
 
-            if graph_type == "Bar Chart":
-                df_grouped.plot(kind="bar", ax=ax)
-                ax.set_title("Bar Chart")
-            elif graph_type == "Line Chart":
-                df_grouped.plot(kind="line", ax=ax)
-                ax.set_title("Line Chart")
-            elif graph_type == "Scatter Plot":
-                df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
-                ax.set_title("Scatter Plot")
-            elif graph_type == "Histogram":
-                df[y_axis].plot(kind="hist", bins=20, ax=ax)
-                ax.set_title("Histogram")
-            elif graph_type == "Pie Chart":
-                df_grouped.plot(kind="pie", ax=ax)
-                ax.set_title("Pie Chart")
-            elif graph_type == "Box Plot":
-                df.boxplot(column=[y_axis], by=x_axis, ax=ax)
-                ax.set_title("Box Plot")
-            elif graph_type == "Heatmap":
-                sns.heatmap(df.corr(), annot=True, ax=ax)
-                ax.set_title("Heatmap")
-            elif graph_type == "Area Chart":
-                df_grouped.plot(kind="area", ax=ax)
-                ax.set_title("Area Chart")
-            elif graph_type == "Parallel Coordinates":
-                pd.plotting.parallel_coordinates(df, x_axis, ax=ax)
-                ax.set_title("Parallel Coordinates")
+            try:
+                if graph_type == "Bar Chart":
+                    df_grouped.plot(kind="bar", ax=ax)
+                    ax.set_title("Bar Chart")
+                    ax.set_xlabel(x_axis)
+                    ax.set_ylabel(y_axis if measure == "Count" else f"{measure} of {y_axis}")
 
-            ax.set_xlabel(x_axis)
-            ax.set_ylabel(y_axis)
-            st.pyplot(fig)
+                elif graph_type == "Line Chart":
+                    df_grouped.plot(kind="line", ax=ax)
+                    ax.set_title("Line Chart")
+                    ax.set_xlabel(x_axis)
+                    ax.set_ylabel(y_axis if measure == "Count" else f"{measure} of {y_axis}")
 
-            st.session_state.fig = fig
+                elif graph_type == "Scatter Plot":
+                    if x_axis not in df.select_dtypes(include=["number"]).columns or y_axis not in df.select_dtypes(include=["number"]).columns:
+                        st.error("Scatter Plot requires both X and Y to be numeric columns.")
+                        return
+                    df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
+                    ax.set_title("Scatter Plot")
+
+                elif graph_type == "Histogram":
+                    if y_axis not in df.select_dtypes(include=["number"]).columns:
+                        st.error("Histogram requires a numeric column for the Y-axis.")
+                        return
+                    df[y_axis].plot(kind="hist", bins=20, ax=ax)
+                    ax.set_title("Histogram")
+                    ax.set_xlabel(y_axis)
+                    ax.set_ylabel("Frequency")
+
+                elif graph_type == "Pie Chart":
+                    if measure == "Count":
+                        df_grouped.plot(kind="pie", ax=ax, autopct='%1.1f%%')
+                        ax.set_title("Pie Chart")
+                        ax.set_ylabel("")
+                    else:
+                        df_grouped.plot(kind="pie", ax=ax, autopct='%1.1f%%')
+                        ax.set_title("Pie Chart")
+                        ax.set_ylabel("")
+
+                elif graph_type == "Box Plot":
+                    if y_axis not in df.select_dtypes(include=["number"]).columns:
+                        st.error("Box Plot requires a numeric Y-axis.")
+                        return
+                    df.boxplot(column=[y_axis], by=x_axis, ax=ax)
+                    ax.set_title("Box Plot")
+                    ax.set_xlabel(x_axis)
+                    ax.set_ylabel(y_axis)
+                    plt.suptitle("")
+
+                elif graph_type == "Heatmap":
+                    numeric_df = df.select_dtypes(include=["number"])
+                    if numeric_df.empty:
+                        st.error("Heatmap requires numeric data only.")
+                        return
+                    sns.heatmap(numeric_df.corr(), annot=True, ax=ax)
+                    ax.set_title("Heatmap")
+
+                elif graph_type == "Area Chart":
+                    df_grouped.plot(kind="area", ax=ax)
+                    ax.set_title("Area Chart")
+                    ax.set_xlabel(x_axis)
+                    ax.set_ylabel(y_axis if measure == "Count" else f"{measure} of {y_axis}")
+
+                elif graph_type == "Parallel Coordinates":
+                    if x_axis not in df.columns:
+                        st.error("Invalid X-axis for parallel coordinates.")
+                        return
+                    if df.select_dtypes(include=["number"]).shape[1] <= 1:
+                        st.error("Parallel Coordinates require multiple numeric columns.")
+                        return
+                    try:
+                        pd.plotting.parallel_coordinates(df, x_axis, ax=ax)
+                        ax.set_title("Parallel Coordinates")
+                    except Exception as e:
+                        st.error(f"An error occurred while plotting Parallel Coordinates: {str(e)}")
+                        return
+
+                st.pyplot(fig)
+                st.session_state.fig = fig
+            except Exception as e:
+                st.error(f"An error occurred while creating the plot: {str(e)}")
+                return
 
             explanation_prompt = (
                 f"The visualization is generated based on the following data:\n"
@@ -230,7 +283,7 @@ def Visualization():
                 f"- Y-axis (`{y_axis}`) values: {df[y_axis].tolist()}\n"
                 f"- Measure Values: `{measure}`\n"
                 f"The data provided will be used to generate a `{graph_type}`.\n"
-                f"Generate an interpration of the data."
+                f"Generate an interpretation of the data."
             )
 
             explanation = generate_explanation(explanation_prompt)
