@@ -5,16 +5,13 @@ import os
 import tempfile
 import seaborn as sns
 import plotly.express as px
-from groq import Groq
+import google.generativeai as genai
 from fpdf import FPDF
 from docx import Document
 from docx.shared import Inches
 from io import BytesIO
 
-
-os.environ["GROQ_API_KEY"] = "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"
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+genai.configure(api_key=os.environ.get("PALM_API_KEY"))
 
 st.set_page_config(
     page_title="Data App",
@@ -55,17 +52,31 @@ if "interpretation" not in st.session_state:
 if "fig" not in st.session_state:
     st.session_state.fig = None
 
+generation_config = {
+  "temperature": 1,
+  "top_p": 0.95,
+  "top_k": 40,
+  "max_output_tokens": 8192,
+  "response_mime_type": "text/plain",
+}
+
+model = genai.GenerativeModel(
+  model_name="gemini-1.5-flash",
+  generation_config=generation_config,
+)
 
 def generate_explanation(prompt):
     try:
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama3-8b-8192",
+        chat_session = model.start_chat(
+            history=[
+            ]
         )
-        return chat_completion.choices[0].message.content
+
+        response = chat_session.send_message(prompt)
+
+        return response.text
     except Exception as e:
         return f"An error occurred while generating the explanation: {str(e)}"
-
 
 def save_as_docx(interpretation, fig):
     doc = Document()
@@ -133,7 +144,6 @@ def DataCleaning():
         else:
             st.error("Please upload a file first.")
 
-
 def Visualization():
     st.title("Data Visualization with AI Interpretation")
     st.write("Visualize your data and get AI insights here.")
@@ -148,7 +158,8 @@ def Visualization():
         y_axis = st.sidebar.selectbox("Select Y-axis", options=df.columns)
         measure = st.sidebar.selectbox("Measure Values", options=["Count", "Sum", "Average", "Min", "Max"])
         graph_type = st.sidebar.selectbox(
-            "Select Graph Type", options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Pie Chart", "Box Plot", "Heatmap","Parallel Coordinates", "Area Chart"]
+            "Select Graph Type", 
+            options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Pie Chart", "Box Plot", "Heatmap","Parallel Coordinates", "Area Chart"]
         )
 
         st.session_state.visualization_settings.update({
@@ -163,7 +174,6 @@ def Visualization():
             fig.tight_layout()
             fig.subplots_adjust(left=0.1, right=1, top=0.9, bottom=0.1)
 
-            # Data grouping and plotting logic
             if measure == "Count":
                 df_grouped = df.groupby(x_axis).size()
             else:
@@ -195,7 +205,7 @@ def Visualization():
             elif graph_type == "Pie Chart":
                 df_grouped.plot(kind="pie", ax=ax)
                 ax.set_title("Pie Chart")
-            elif graph_type == "Box Plot": 
+            elif graph_type == "Box Plot":
                 df.boxplot(column=[y_axis], by=x_axis, ax=ax)
                 ax.set_title("Box Plot")
             elif graph_type == "Heatmap":
@@ -207,6 +217,7 @@ def Visualization():
             elif graph_type == "Parallel Coordinates":
                 pd.plotting.parallel_coordinates(df, x_axis, ax=ax)
                 ax.set_title("Parallel Coordinates")
+
             ax.set_xlabel(x_axis)
             ax.set_ylabel(y_axis)
             st.pyplot(fig)
@@ -215,17 +226,19 @@ def Visualization():
 
             explanation_prompt = (
                 f"The visualization is generated based on the following data:\n"
-                f"- X-axis (`{x_axis}`) values: {df[x_axis].head(10).tolist()}\n"
-                f"- Y-axis (`{y_axis}`) values: {df[y_axis].head(10).tolist()}\n"
-                f"The measure used is `{measure}` and the graph type is `{graph_type}`."
+                f"- X-axis (`{x_axis}`) values: {df[x_axis].tolist()}\n"
+                f"- Y-axis (`{y_axis}`) values: {df[y_axis].tolist()}\n"
+                f"- Measure Values: `{measure}`\n"
+                f"The data provided will be used to generate a `{graph_type}`.\n"
+                f"Generate an interpration of the data."
             )
+
             explanation = generate_explanation(explanation_prompt)
             st.subheader("AI Interpretation")
             st.session_state.interpretation = explanation
             st.write(explanation)
 
             save_as_docx(explanation, fig)
-
 
 def main():
     st.sidebar.title("Navigation")
@@ -235,7 +248,6 @@ def main():
         DataCleaning()
     elif page == "Data Visualization":
         Visualization()
-
 
 if __name__ == "__main__":
     main()
