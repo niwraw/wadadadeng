@@ -81,27 +81,20 @@ def save_as_docx(interpretation, fig):
     doc = Document()
     doc.add_heading("AI Interpretation and Visualization", level=1)
 
-    # Add interpretation text
     doc.add_paragraph(interpretation)
 
-    # Save the plot as an image to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
         fig.savefig(tmpfile.name, format="png")
         tmpfile.flush()
-
-        # Add the image from the temporary file to the docx
         doc.add_picture(tmpfile.name, width=Inches(6))
 
-    # Save the docx to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmpfile:
         doc.save(tmpfile.name)
         tmpfile.flush()
 
-        # Read the docx back into a BytesIO object
         with open(tmpfile.name, "rb") as f:
             docx_buffer = BytesIO(f.read())
 
-    # Download button to allow the user to download the docx
     st.download_button(
         label="📥 Download DOCX",
         data=docx_buffer,
@@ -158,7 +151,7 @@ def Visualization():
         measure = st.sidebar.selectbox("Measure Values", options=["Count", "Sum", "Average", "Min", "Max"])
         graph_type = st.sidebar.selectbox(
             "Select Graph Type", 
-            options=["Bar Chart", "Line Chart", "Scatter Plot", "Histogram", "Pie Chart", "Box Plot", "Heatmap","Parallel Coordinates", "Area Chart"]
+            options=["Bar Chart", "Line Chart", "Pie Chart", "Parallel Coordinates", "Area Chart"]
         )
 
         st.session_state.visualization_settings.update({
@@ -215,22 +208,6 @@ def Visualization():
                     ax.set_xlabel(x_axis)
                     ax.set_ylabel(y_axis if measure == "Count" else f"{measure} of {y_axis}")
 
-                elif graph_type == "Scatter Plot":
-                    if x_axis not in df.select_dtypes(include=["number"]).columns or y_axis not in df.select_dtypes(include=["number"]).columns:
-                        st.error("Scatter Plot requires both X and Y to be numeric columns.")
-                        return
-                    df.plot.scatter(x=x_axis, y=y_axis, ax=ax)
-                    ax.set_title("Scatter Plot")
-
-                elif graph_type == "Histogram":
-                    if y_axis not in df.select_dtypes(include=["number"]).columns:
-                        st.error("Histogram requires a numeric column for the Y-axis.")
-                        return
-                    df[y_axis].plot(kind="hist", bins=20, ax=ax)
-                    ax.set_title("Histogram")
-                    ax.set_xlabel(y_axis)
-                    ax.set_ylabel("Frequency")
-
                 elif graph_type == "Pie Chart":
                     if measure == "Count":
                         df_grouped.plot(kind="pie", ax=ax, autopct='%1.1f%%')
@@ -240,24 +217,6 @@ def Visualization():
                         df_grouped.plot(kind="pie", ax=ax, autopct='%1.1f%%')
                         ax.set_title("Pie Chart")
                         ax.set_ylabel("")
-
-                elif graph_type == "Box Plot":
-                    if y_axis not in df.select_dtypes(include=["number"]).columns:
-                        st.error("Box Plot requires a numeric Y-axis.")
-                        return
-                    df.boxplot(column=[y_axis], by=x_axis, ax=ax)
-                    ax.set_title("Box Plot")
-                    ax.set_xlabel(x_axis)
-                    ax.set_ylabel(y_axis)
-                    plt.suptitle("")
-
-                elif graph_type == "Heatmap":
-                    numeric_df = df.select_dtypes(include=["number"])
-                    if numeric_df.empty:
-                        st.error("Heatmap requires numeric data only.")
-                        return
-                    sns.heatmap(numeric_df.corr(), annot=True, ax=ax)
-                    ax.set_title("Heatmap")
 
                 elif graph_type == "Area Chart":
                     df_grouped.plot(kind="area", ax=ax)
