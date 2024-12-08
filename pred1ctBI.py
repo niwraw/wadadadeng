@@ -171,6 +171,13 @@ def DataCleaning():
 
         with st.expander("Data Types"):
             st.write(st.session_state.data.dtypes)
+    else:
+        # If no file is uploaded, clear any stored visualization and interpretation
+        st.session_state.data = None
+        st.session_state.interpretation = None
+        st.session_state.fig = None
+        st.session_state.docx_buffer = None
+        st.session_state.pdf_buffer = None
 
     if st.button("Clean Data"):
         if st.session_state.data is not None:
@@ -182,6 +189,14 @@ def DataCleaning():
                 f"**Data cleaned successfully. {empty_cells_removed} empty cells removed.**"
             )
             st.dataframe(st.session_state.cleaned_data)
+
+            cleaned_csv = st.session_state.cleaned_data.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Cleaned Data as CSV",
+                data=cleaned_csv,
+                file_name="cleaned_data.csv",
+                mime="text/csv",
+            )
         else:
             st.error("Please upload a file first.")
 
@@ -378,7 +393,7 @@ def Visualization():
                     )
 
             elif graph_type == "Parallel Coordinates":
-                sample_values = subset_df.head(100).to_dict(orient='records') 
+                sample_values = subset_df.head(100).to_dict(orient='records')
                 explanation_prompt = (
                     f"A parallel coordinates plot has been created using '{class_column}' as the class column "
                     f"and {numeric_cols_selected} as the numeric features. "
@@ -390,6 +405,13 @@ def Visualization():
                 explanation = generate_explanation(explanation_prompt)
 
             st.session_state.interpretation = explanation
+
+    else:
+        st.session_state.data = None
+        st.session_state.interpretation = None
+        st.session_state.fig = None
+        st.session_state.docx_buffer = None
+        st.session_state.pdf_buffer = None
 
     if st.session_state.fig is not None and st.session_state.interpretation is not None:
         col1, col2 = st.columns([2, 1])
@@ -434,6 +456,12 @@ def Visualization():
 def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.selectbox("Go to", ["Data Cleaning", "Data Visualization"])
+
+    if st.session_state.data is None:
+        st.session_state.interpretation = None
+        st.session_state.fig = None
+        st.session_state.docx_buffer = None
+        st.session_state.pdf_buffer = None
 
     if page == "Data Cleaning":
         DataCleaning()
