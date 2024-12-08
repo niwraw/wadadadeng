@@ -407,12 +407,14 @@ def Visualization():
             st.session_state.docx_buffer = None
 
         if st.button("Generate Document"):
-            if format_choice == "DOCX":
-                st.session_state.docx_buffer = create_docx(st.session_state.interpretation, st.session_state.fig)
-                st.session_state.pdf_buffer = None
-            else:
-                st.session_state.pdf_buffer = create_pdf(st.session_state.interpretation, st.session_state.fig)
-                st.session_state.docx_buffer = None
+            with st.spinner("Generating your document..."):
+                if format_choice == "DOCX":
+                    st.session_state.docx_buffer = create_docx(st.session_state.interpretation, st.session_state.fig)
+                    st.session_state.pdf_buffer = None
+                else:
+                    st.session_state.pdf_buffer = create_pdf(st.session_state.interpretation, st.session_state.fig)
+                    st.session_state.docx_buffer = None
+            st.success("Document generated successfully!")
 
         if st.session_state.docx_buffer is not None and format_choice == "DOCX":
             st.download_button(
