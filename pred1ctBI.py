@@ -51,6 +51,19 @@ if "interpretation" not in st.session_state:
     st.session_state.interpretation = None
 if "fig" not in st.session_state:
     st.session_state.fig = None
+if "docx_buffer" not in st.session_state:
+    st.session_state.docx_buffer = None
+
+if "previous_choices" not in st.session_state:
+    st.session_state.previous_choices = {
+        "graph_type": None,
+        "x_axis": None,
+        "y_axis": None,
+        "category_col": None,
+        "numeric_col_for_pie": None,
+        "class_column": None,
+        "numeric_cols_selected": None
+    }
 
 generation_config = {
     "temperature": 1,
@@ -67,15 +80,13 @@ model = genai.GenerativeModel(
 
 def generate_explanation(prompt):
     try:
-        chat_session = model.start_chat(
-            history=[]
-        )
+        chat_session = model.start_chat(history=[])
         response = chat_session.send_message(prompt)
         return response.text
     except Exception as e:
         return f"An error occurred while generating the explanation: {str(e)}"
 
-def save_as_docx(interpretation, fig):
+def create_docx(interpretation, fig):
     doc = Document()
     doc.add_heading("AI Interpretation and Visualization", level=1)
 
@@ -89,16 +100,10 @@ def save_as_docx(interpretation, fig):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmpfile:
         doc.save(tmpfile.name)
         tmpfile.flush()
-
         with open(tmpfile.name, "rb") as f:
             docx_buffer = BytesIO(f.read())
 
-    st.download_button(
-        label="📥 Download DOCX",
-        data=docx_buffer,
-        file_name="interpretation_and_visualization.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
+    return docx_buffer
 
 def DataCleaning():
     st.title("Data Cleaning")
@@ -154,6 +159,14 @@ def Visualization():
 
         measure_options = ["Count", "Sum", "Average", "Min", "Max"]
 
+        x_axis = None
+        y_axis = None
+        category_col = None
+        numeric_col_for_pie = None
+        class_column = None
+        numeric_cols_selected = None
+        measure = "Count"
+
         if graph_type in ["Bar Chart", "Line Chart", "Area Chart"]:
             x_axis = st.selectbox("Select X-axis (Categorical)", options=df.columns)
             y_axis = st.selectbox("Select Y-axis (Numeric)", options=df.columns)
@@ -169,7 +182,7 @@ def Visualization():
             if valid_y and y_axis in numeric_columns:
                 measure = st.selectbox("Measure Values", options=measure_options)
             else:
-                measure = "Count" 
+                measure = "Count"
 
         elif graph_type == "Pie Chart":
             category_col = st.selectbox("Select Category Column", options=df.columns)
@@ -191,9 +204,26 @@ def Visualization():
                 return
             class_column = st.selectbox("Select Categorical Column for Class", options=categorical_columns)
             numeric_cols_selected = st.multiselect("Select Numeric Columns", options=numeric_columns, default=numeric_columns[:2])
-            measure = None 
+            measure = None
         else:
             measure = "Count"
+
+        current_choices = {
+            "graph_type": graph_type,
+            "x_axis": x_axis,
+            "y_axis": y_axis,
+            "category_col": category_col,
+            "numeric_col_for_pie": numeric_col_for_pie,
+            "class_column": class_column,
+            "numeric_cols_selected": tuple(numeric_cols_selected) if numeric_cols_selected else None
+        }
+
+        if any(st.session_state.previous_choices[key] != current_choices[key] for key in current_choices):
+            st.session_state.fig = None
+            st.session_state.interpretation = None
+            st.session_state.docx_buffer = None
+
+        st.session_state.previous_choices = current_choices
 
         if st.button("Generate Visualization & Interpretation"):
             try:
@@ -233,7 +263,7 @@ def Visualization():
                     ax.set_ylabel(y_label)
 
                 elif graph_type == "Pie Chart":
-                    if not valid_cat:
+                    if category_col is None:
                         st.error("Please select a valid category column for the Pie Chart.")
                         return
                     if measure == "Count":
@@ -312,15 +342,29 @@ def Visualization():
             with st.spinner("Generating AI interpretation, please wait..."):
                 explanation = generate_explanation(explanation_prompt)
 
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.pyplot(st.session_state.fig)
-            with col2:
-                st.subheader("AI Interpretation")
-                st.session_state.interpretation = explanation
-                st.write(explanation)
+            st.session_state.interpretation = explanation
 
-            save_as_docx(explanation, st.session_state.fig)
+    # If we have a figure and interpretation, always display them
+    if st.session_state.fig is not None and st.session_state.interpretation is not None:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.pyplot(st.session_state.fig)
+        with col2:
+            st.subheader("AI Interpretation")
+            st.write(st.session_state.interpretation)
+
+        # Provide a button to generate and download the DOCX file
+        if st.button("Generate DOCX for Download"):
+            st.session_state.docx_buffer = create_docx(st.session_state.interpretation, st.session_state.fig)
+
+        # If the docx_buffer is ready, show the download button
+        if st.session_state.docx_buffer is not None:
+            st.download_button(
+                label="📥 Download DOCX",
+                data=st.session_state.docx_buffer,
+                file_name="interpretation_and_visualization.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
 
 def main():
     st.sidebar.title("Navigation")
