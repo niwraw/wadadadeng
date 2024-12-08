@@ -8,7 +8,8 @@ import plotly.express as px
 import google.generativeai as genai
 from fpdf import FPDF
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 
 genai.configure(api_key=os.environ.get("PALM_API_KEY"))
@@ -53,6 +54,8 @@ if "fig" not in st.session_state:
     st.session_state.fig = None
 if "docx_buffer" not in st.session_state:
     st.session_state.docx_buffer = None
+if "pdf_buffer" not in st.session_state:
+    st.session_state.pdf_buffer = None
 
 if "previous_choices" not in st.session_state:
     st.session_state.previous_choices = {
@@ -88,14 +91,25 @@ def generate_explanation(prompt):
 
 def create_docx(interpretation, fig):
     doc = Document()
-    doc.add_heading("AI Interpretation and Visualization", level=1)
 
-    doc.add_paragraph(interpretation)
+    title = doc.add_heading("AI Interpretation and Visualization", 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    heading = doc.add_heading("Data Insights", level=1)
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    p = doc.add_paragraph(interpretation)
+    p.style = doc.styles['Normal']
+    p_format = p.paragraph_format
+    p_format.space_after = Pt(12)
+    p_format.line_spacing = 1.5
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
         fig.savefig(tmpfile.name, format="png")
         tmpfile.flush()
         doc.add_picture(tmpfile.name, width=Inches(6))
+        last_paragraph = doc.paragraphs[-1]
+        last_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmpfile:
         doc.save(tmpfile.name)
@@ -104,6 +118,38 @@ def create_docx(interpretation, fig):
             docx_buffer = BytesIO(f.read())
 
     return docx_buffer
+
+def create_pdf(interpretation, fig):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+        fig.savefig(tmpfile.name, format="png", dpi=300)
+        tmpfile.flush()
+        img_path = tmpfile.name
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 10, "AI Interpretation and Visualization", align='C', ln=True)
+    pdf.ln(5)
+
+    pdf.set_font("Arial", '', 12)
+
+    lines = interpretation.split('\n')
+    for line in lines:
+        pdf.multi_cell(0, 10, line)
+        pdf.ln(2)
+
+    pdf.add_page()
+
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, "Visualization", ln=True, align='C')
+    pdf.ln(5)
+    pdf.image(img_path, x=10, y=40, w=180)
+    pdf.ln(100)
+
+    pdf_data = pdf.output(dest='S').encode('latin-1', 'replace')
+    pdf_buffer = BytesIO(pdf_data)
+    return pdf_buffer
 
 def DataCleaning():
     st.title("Data Cleaning")
@@ -173,7 +219,7 @@ def Visualization():
 
             valid_x = x_axis in df.columns
             valid_y = y_axis in numeric_columns or y_axis == x_axis
-            
+
             if not valid_x or "Unnamed" in x_axis:
                 st.error("Please select a valid X-axis column.")
             if not valid_y or "Unnamed" in y_axis:
@@ -222,6 +268,7 @@ def Visualization():
             st.session_state.fig = None
             st.session_state.interpretation = None
             st.session_state.docx_buffer = None
+            st.session_state.pdf_buffer = None
 
         st.session_state.previous_choices = current_choices
 
@@ -344,7 +391,6 @@ def Visualization():
 
             st.session_state.interpretation = explanation
 
-    # If we have a figure and interpretation, always display them
     if st.session_state.fig is not None and st.session_state.interpretation is not None:
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -353,17 +399,34 @@ def Visualization():
             st.subheader("AI Interpretation")
             st.write(st.session_state.interpretation)
 
-        # Provide a button to generate and download the DOCX file
-        if st.button("Generate DOCX for Download"):
-            st.session_state.docx_buffer = create_docx(st.session_state.interpretation, st.session_state.fig)
+        format_choice = st.radio("Select Document Format:", ("DOCX", "PDF"), index=0)
 
-        # If the docx_buffer is ready, show the download button
-        if st.session_state.docx_buffer is not None:
+        if format_choice == "DOCX" and st.session_state.pdf_buffer is not None:
+            st.session_state.pdf_buffer = None
+        elif format_choice == "PDF" and st.session_state.docx_buffer is not None:
+            st.session_state.docx_buffer = None
+
+        if st.button("Generate Document"):
+            if format_choice == "DOCX":
+                st.session_state.docx_buffer = create_docx(st.session_state.interpretation, st.session_state.fig)
+                st.session_state.pdf_buffer = None
+            else:
+                st.session_state.pdf_buffer = create_pdf(st.session_state.interpretation, st.session_state.fig)
+                st.session_state.docx_buffer = None
+
+        if st.session_state.docx_buffer is not None and format_choice == "DOCX":
             st.download_button(
                 label="📥 Download DOCX",
                 data=st.session_state.docx_buffer,
                 file_name="interpretation_and_visualization.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        elif st.session_state.pdf_buffer is not None and format_choice == "PDF":
+            st.download_button(
+                label="📥 Download PDF",
+                data=st.session_state.pdf_buffer,
+                file_name="interpretation_and_visualization.pdf",
+                mime="application/pdf",
             )
 
 def main():
