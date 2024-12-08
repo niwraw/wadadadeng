@@ -172,7 +172,6 @@ def DataCleaning():
         with st.expander("Data Types"):
             st.write(st.session_state.data.dtypes)
     else:
-        # If no file is uploaded, clear any stored visualization and interpretation
         st.session_state.data = None
         st.session_state.interpretation = None
         st.session_state.fig = None
