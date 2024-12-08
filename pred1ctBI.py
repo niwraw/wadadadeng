@@ -12,7 +12,7 @@ from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 
-genai.configure(api_key=os.environ.get("PALM_API_KEY"))
+genai.configure(api_key="AIzaSyDoQSwSMdwX5uCNgFQKwKj63EVBc8VPSFs")
 
 st.set_page_config(
     page_title="Data App",
@@ -129,21 +129,21 @@ def create_pdf(interpretation, fig):
     pdf.add_page()
 
     pdf.set_font("Arial", 'B', 20)
-    pdf.cell(0, 10, "AI Interpretation and Visualization", align='C', ln=True)
-    pdf.ln(5)
+    pdf.cell(0, 5, "AI Interpretation and Visualization", align='C', ln=True)
+    pdf.ln(10)
 
     pdf.set_font("Arial", '', 12)
 
     lines = interpretation.split('\n')
     for line in lines:
-        pdf.multi_cell(0, 10, line)
-        pdf.ln(2)
+        pdf.multi_cell(0, 5, line)
+        pdf.ln(5)
 
     pdf.add_page()
 
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "Visualization", ln=True, align='C')
-    pdf.ln(5)
+    pdf.cell(0, 7, "Visualization", ln=True, align='C')
+    pdf.ln(10)
     pdf.image(img_path, x=10, y=40, w=180)
     pdf.ln(100)
 
@@ -246,7 +246,6 @@ def Visualization():
 
         elif graph_type == "Pie Chart":
             category_col = st.selectbox("Select Category Column", options=df.columns)
-            valid_cat = category_col in df.columns
 
             numeric_col_for_pie = st.selectbox("Select Numeric Column (optional)", options=["None"]+numeric_columns)
             if numeric_col_for_pie == "None":
@@ -288,6 +287,7 @@ def Visualization():
 
         if st.button("Generate Visualization & Interpretation"):
             try:
+                df_grouped = None
                 fig, ax = plt.subplots(figsize=(10, 10))
                 fig.tight_layout()
                 fig.subplots_adjust(left=0.1, right=1, top=0.9, bottom=0.1)
@@ -364,7 +364,10 @@ def Visualization():
                 st.error(f"An error occurred while creating the plot: {str(e)}")
                 return
 
-            grouped_values = df_grouped.reset_index().values.tolist()
+            if df_grouped is not None:
+                grouped_values = df_grouped.reset_index().values.tolist()
+            else:
+                grouped_values = []
 
             if graph_type in ["Bar Chart", "Line Chart", "Area Chart"]:
                 explanation_prompt = (
