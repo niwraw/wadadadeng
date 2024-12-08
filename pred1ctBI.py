@@ -267,7 +267,6 @@ def Visualization():
                     pd.plotting.parallel_coordinates(subset_df, class_column, ax=ax)
                     ax.set_title("Parallel Coordinates")
 
-                st.pyplot(fig)
                 st.session_state.fig = fig
 
             except Exception as e:
@@ -310,13 +309,18 @@ def Visualization():
                     f"Interpret how different classes differ across these numeric dimensions and describe any patterns you observe."
                 )
 
+            with st.spinner("Generating AI interpretation, please wait..."):
+                explanation = generate_explanation(explanation_prompt)
 
-            explanation = generate_explanation(explanation_prompt)
-            st.subheader("AI Interpretation")
-            st.session_state.interpretation = explanation
-            st.write(explanation)
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.pyplot(st.session_state.fig)
+            with col2:
+                st.subheader("AI Interpretation")
+                st.session_state.interpretation = explanation
+                st.write(explanation)
 
-            save_as_docx(explanation, fig)
+            save_as_docx(explanation, st.session_state.fig)
 
 def main():
     st.sidebar.title("Navigation")
