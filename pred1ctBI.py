@@ -13,7 +13,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from io import BytesIO
 import numpy as np
 
-genai.configure(api_key="AIzaSyDoQSwSMdwX5uCNgFQKwKj63EVBc8VPSFs")
+genai.configure(api_key=os.environ.get("PALM_API_KEY"))
 
 st.set_page_config(
     page_title="Data App",
@@ -160,10 +160,7 @@ def DataCleaning():
 
     if uploaded_file is not None:
         remove_duplicates = False
-        capitalize_fix = False
-        whitespace_fix = False
         detect_outliers = False
-        rename_values = {}
 
         st.session_state.data = pd.read_csv(uploaded_file)
         st.dataframe(st.session_state.data)
@@ -176,9 +173,9 @@ def DataCleaning():
             st.write(missing_values)
             missing_value_option = st.radio(
                 "How do you want to handle missing values?",
-                ("Remove rows with missing values", "Fill missing values with mean/median/mode")
+                ("Remove rows with missing values", "Fill missing values with mean/median/mode (For Numerical Columns Only)")
             )
-            if missing_value_option == "Fill missing values with mean/median/mode":
+            if missing_value_option == "Fill missing values with mean/median/mode (For Numerical Columns Only)":
                 fill_strategy = st.selectbox(
                     "Select fill strategy for missing values",
                     ("Mean", "Median", "Mode")
@@ -187,6 +184,7 @@ def DataCleaning():
         with st.expander("🔄 Duplicate Rows"):
             duplicate_count = st.session_state.data.duplicated().sum()
             st.write(f"Number of duplicate rows: {duplicate_count}")
+            remove_duplicates = False
             if duplicate_count > 0:
                 remove_duplicates = st.checkbox("Remove duplicate rows")
 
@@ -204,36 +202,45 @@ def DataCleaning():
 
         with st.expander("📉 Outliers Detection"):
             numerical_cols = st.session_state.data.select_dtypes(include=[np.number]).columns
+            detect_outliers = False
             if len(numerical_cols) > 0:
                 st.write("Outliers detected using IQR method (values outside 1.5 * IQR).")
                 detect_outliers = st.checkbox("Remove outliers from numerical columns")
 
+        capitalize_fixes = {}
+        whitespace_fixes = {}
+        rename_values_dict = {}
+
         with st.expander("🛠️ Structural Errors"):
             categorical_columns = st.session_state.data.select_dtypes(include=['object']).columns
-            if len(categorical_columns) > 0:
-                for col in categorical_columns:
-                    st.subheader(f"Structural Errors in Column: **{col}**")
-                    
-                    # Display unique values for the column
-                    unique_values = st.session_state.data[col].unique()
-                    st.write(f"Unique values: {unique_values}")
-                    
-                    # Correct inconsistent capitalization
-                    capitalize_fix = st.checkbox(f"Correct capitalization issues in {col}")
-                    
-                    # Remove leading and trailing whitespaces
-                    whitespace_fix = st.checkbox(f"Remove extra whitespaces in {col}")
-                    
-                    # Allow users to rename categories
-                    rename_values = {}
-                    for val in unique_values:
-                        new_val = st.text_input(f"Rename '{val}' in column '{col}'", value=val)
-                        rename_values[val] = new_val
+            for col in categorical_columns:
+                st.subheader(f"Structural Errors in Column: **{col}**")
 
-        # Clean data when button is clicked
+                unique_values = st.session_state.data[col].unique()
+                st.write(f"Unique values: {unique_values}")
+
+                capitalize_fixes[col] = st.checkbox(
+                    f"Correct capitalization issues in {col}",
+                    key=f"capitalize_{col}"
+                )
+
+                whitespace_fixes[col] = st.checkbox(
+                    f"Remove extra whitespaces in {col}",
+                    key=f"whitespace_{col}"
+                )
+
+                column_rename_values = {}
+                for val in unique_values:
+                    new_val = st.text_input(
+                        f"Rename '{val}' in column '{col}'",
+                        value=val,
+                        key=f"rename_{col}_{val}"
+                    )
+                    column_rename_values[val] = new_val
+                rename_values_dict[col] = column_rename_values
+
         if st.button("🚀 Clean Data"):
             if st.session_state.data is not None:
-                
                 cleaned_data = st.session_state.data.copy()
 
                 if missing_value_option == "Remove rows with missing values":
@@ -253,7 +260,6 @@ def DataCleaning():
                 if remove_duplicates:
                     cleaned_data = cleaned_data.drop_duplicates()
 
-                # Handle data type correction
                 for col in columns_to_change:
                     if new_dtype == "int64":
                         cleaned_data[col] = pd.to_numeric(cleaned_data[col], errors='coerce').astype('Int64')
@@ -262,7 +268,6 @@ def DataCleaning():
                     elif new_dtype == "object":
                         cleaned_data[col] = cleaned_data[col].astype('str')
 
-                # Handle outliers using IQR method
                 if detect_outliers:
                     for col in numerical_cols:
                         Q1 = cleaned_data[col].quantile(0.25)
@@ -270,33 +275,29 @@ def DataCleaning():
                         IQR = Q3 - Q1
                         cleaned_data = cleaned_data[~((cleaned_data[col] < (Q1 - 1.5 * IQR)) | (cleaned_data[col] > (Q3 + 1.5 * IQR)))]
 
-                # Handle structural errors for categorical columns
                 for col in categorical_columns:
-                    if capitalize_fix:
-                        cleaned_data[col] = cleaned_data[col].str.lower().str.capitalize()
-                    
-                    if whitespace_fix:
-                        cleaned_data[col] = cleaned_data[col].str.strip()
-                    
-                    if rename_values:
-                        cleaned_data[col] = cleaned_data[col].replace(rename_values)
+                    if rename_values_dict[col]:
+                        cleaned_data[col] = cleaned_data[col].replace(rename_values_dict[col])
 
-                # Remove leading/trailing whitespace in string columns
+                    if capitalize_fixes[col]:
+                        cleaned_data[col] = cleaned_data[col].str.lower().str.capitalize()
+
+                    if whitespace_fixes[col]:
+                        cleaned_data[col] = cleaned_data[col].str.strip()
+
                 for col in cleaned_data.select_dtypes(include=['object']).columns:
                     cleaned_data[col] = cleaned_data[col].str.strip()
 
-                # Display the cleaned data
                 st.session_state.cleaned_data = cleaned_data
                 st.write("**✅ Data cleaned successfully.**")
                 st.dataframe(st.session_state.cleaned_data)
 
-                # Download cleaned data as CSV
                 cleaned_csv = st.session_state.cleaned_data.to_csv(index=False).encode('utf-8')
                 st.download_button(
                     label="📥 Download Cleaned Data as CSV",
                     data=cleaned_csv,
                     file_name="cleaned_data.csv",
-                    mime="text/csv",
+                    mime="text/csv"
                 )
             else:
                 st.error("Please upload a file first.")
